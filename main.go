@@ -8,7 +8,7 @@ import (
 )
 
 type SourceCode struct {
-	Line string
+	Line       string
 	LineNumber int
 }
 
@@ -18,16 +18,18 @@ type Program struct {
 }
 
 type CallExpr struct {
-	Type string
-	Value string
+	Type       string
+	Value      string
 	Parameters []Token
 }
 
 func (c CallExpr) validate(value string) bool {
-	var result = map[string]string {
-		"Entity": "Entity",
+	var result = map[string]string{
+		"Entity":   "Entity",
 		"Database": "Database",
-		"Rel": "Rel",
+		"Rel":      "Rel",
+		"Queue":    "Queue",
+		"Decision": "Decision",
 	}[value]
 	return result == value
 }
@@ -35,6 +37,7 @@ func (c CallExpr) validate(value string) bool {
 type Token struct {
 	Type  TokenType
 	Value string
+	LineNumber int
 }
 
 type TokenType int
@@ -50,11 +53,11 @@ const (
 
 func (t TokenType) String() string {
 	return [...]string{
-		"NumberLiteral", 
-		"StringLiteral", 
+		"NumberLiteral",
+		"StringLiteral",
 		"Identifier",
-		"OpenParen", 
-		"CloseParen", 
+		"OpenParen",
+		"CloseParen",
 		"Quote",
 	}[t]
 }
@@ -80,21 +83,22 @@ func isWhitespace(input string) bool {
 func current(input string) string {
 	return string(input[0])
 }
-	
+
 func tokenizer(source SourceCode) []Token {
 	var input string = source.Line
+	var line int = source.LineNumber
 	var tokens []Token
 
 	for len(input) > 0 {
 		currentValue := current(input)
 		if currentValue == "(" {
-			tokens = append(tokens, Token{OpenParen, shift(&input)})
+			tokens = append(tokens, Token{OpenParen, shift(&input), line})
 		} else if currentValue == ")" {
-			tokens = append(tokens, Token{CloseParen, shift(&input)})
+			tokens = append(tokens, Token{CloseParen, shift(&input), line})
 
 			for len(input) > 0 {
 				if shift(&input) != "\n" || shift(&input) != "\t" || shift(&input) != " " {
-					panic("Unexpected token after "+currentValue)
+					panic(fmt.Sprintf("Line %v: Unexpected token after %v", line, currentValue))
 				}
 			}
 		} else if currentValue == " " || currentValue == "\n" || currentValue == "\t" {
@@ -109,13 +113,13 @@ func tokenizer(source SourceCode) []Token {
 				for len(input) > 0 && isNumber(current(input)) {
 					number += shift(&input)
 				}
-				tokens = append(tokens, Token{NumberLiteral, string(number)})
+				tokens = append(tokens, Token{NumberLiteral, string(number), line})
 			} else if isAlpha(currentValue) {
 				var identifier string
 				for len(input) > 0 && isAlpha(current(input)) {
 					identifier += shift(&input)
 				}
-				tokens = append(tokens, Token{Identifier, string(identifier)})
+				tokens = append(tokens, Token{Identifier, string(identifier), line})
 			} else if currentValue == "\"" {
 				shift(&input)
 				var stringLiteral string
@@ -123,9 +127,9 @@ func tokenizer(source SourceCode) []Token {
 					stringLiteral += shift(&input)
 				}
 				shift(&input)
-				tokens = append(tokens, Token{StringLiteral, string(stringLiteral)})
+				tokens = append(tokens, Token{StringLiteral, string(stringLiteral), line})
 			} else {
-				panic("Unexpected token: "+currentValue)
+				panic(fmt.Sprintf("Line %v: Unexpected token: %v", line, currentValue))
 			}
 		}
 	}
@@ -149,23 +153,21 @@ func parseCallExpr(tokens []Token) []CallExpr {
 		current := eatToken(&tokens)
 		if current.Type == Identifier {
 			expression := CallExpr{Value: current.Value, Type: "CallExpr"}
-			
-			if ! expression.validate(current.Value) {
-				panic("Unexpected '"+current.Value+"' call expression")
+
+			if !expression.validate(current.Value) {
+				panic(fmt.Sprintf("Line %v: Unexpected %v call expression", current.LineNumber, current.Value))
 			}
-			
+
 			if currentToken(tokens).Type != OpenParen {
-				panic("Expected \"(\" character after "+current.Value+" identifier")
+				panic(fmt.Sprintf("Line %v: Expected \"(\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
 			}
 
 			eatToken(&tokens)
 
-			if currentToken(tokens).Type != NumberLiteral && 
-			   currentToken(tokens).Type != StringLiteral && 
-			   currentToken(tokens).Type != Identifier {
-				panic("Unexpected "+currentToken(tokens).Type.String()+" token after \"(\" character")
+			if currentToken(tokens).Type != NumberLiteral && currentToken(tokens).Type != StringLiteral && currentToken(tokens).Type != Identifier {
+				panic(fmt.Sprintf("Line %v: Unexpected %v token after \"(\" character.", currentToken(tokens).LineNumber, currentToken(tokens).Type.String()))
 			}
-			
+
 			for len(tokens) > 0 && currentToken(tokens).Type != CloseParen {
 				c := eatToken(&tokens)
 				if c.Type == NumberLiteral || c.Type == StringLiteral || c.Type == Identifier {
@@ -174,17 +176,16 @@ func parseCallExpr(tokens []Token) []CallExpr {
 			}
 
 			if currentToken(tokens).Type != CloseParen {
-				panic("Expected \")\" character after "+current.Value+" identifier")
+				panic(fmt.Sprintf("Line %v: Expected \")\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
 			}
 
 			eatToken(&tokens)
-			
+
 			expressions = append(expressions, expression)
 		}
 	}
 	return expressions
 }
-
 
 func parser(source []SourceCode) Program {
 	var ast Program = Program{Type: "Program"}
@@ -195,7 +196,7 @@ func parser(source []SourceCode) Program {
 		tokens = append(tokens, tokenizer(first)...)
 		source = source[1:]
 	}
-	
+
 	ast.Body = parseCallExpr(tokens)
 
 	return ast
@@ -205,45 +206,6 @@ func eatExpr(expr *[]CallExpr) CallExpr {
 	var first CallExpr = (*expr)[0]
 	*expr = (*expr)[1:]
 	return first
-}
-
-func readFile(filename string) []SourceCode {
-	f, err := os.Open(filename)
-
-	if err != nil {
-		panic(err)
-	}
-
-	defer f.Close()
-	
-	scanner := bufio.NewScanner(f)
-	
-	var source []SourceCode
-
-	var lineNumber int = 0
-
-	for scanner.Scan() {
-		source = append(source, SourceCode{ Line: scanner.Text(), LineNumber: lineNumber })
-		lineNumber++
-    }
-	fmt.Println(source)
-	return source
-}
-
-func identifiersToMap(expressions []CallExpr) map[string]string {
-	var identifiers map[string]string = make(map[string]string)
-
-	for _, expr := range expressions {
-		if expr.Value == "Entity" {
-			identifiers[expr.Parameters[0].Value] = "["+expr.Parameters[1].Value+"]"
-			eatExpr(&expressions)
-		} else if expr.Value == "Database" {
-			identifiers[expr.Parameters[0].Value] = "[("+expr.Parameters[1].Value+")]"
-			eatExpr(&expressions)
-		}
-	}
-
-	return identifiers
 }
 
 func transpiler(ast Program) []string {
@@ -256,34 +218,76 @@ func transpiler(ast Program) []string {
 			output = append(output, expr.Parameters[0].Value+"["+expr.Parameters[1].Value+"]")
 		} else if expr.Value == "Database" {
 			output = append(output, expr.Parameters[0].Value+"[("+expr.Parameters[1].Value+")]")
+		} else if expr.Value == "Queue" {
+			output = append(output, expr.Parameters[0].Value+"[["+expr.Parameters[1].Value+"]]")
+		} else if expr.Value == "Decision" {
+			output = append(output, expr.Parameters[0].Value+"{"+expr.Parameters[1].Value+"}")
 		} else if expr.Value == "Rel" {
-			output = append(output,expr.Parameters[0].Value+"-->|"+expr.Parameters[1].Value+"|"+expr.Parameters[2].Value)
+			output = append(output, expr.Parameters[0].Value+"-->|"+expr.Parameters[1].Value+"|"+expr.Parameters[2].Value)
 		}
 	}
 	return output
 }
 
-func writeFile(source []string) {
-	file, err := os.Create("output.txt")
-    if err != nil {
-        panic(err)
-    }
-    writer := bufio.NewWriter(file)
+type FileScanner struct {
+	Scanner *bufio.Scanner
+}
+
+func (f *FileScanner) newReader(filename string) {
+	file, err := os.Open(filename)
+	if err != nil {
+		panic(err)
+	}
+	f.Scanner = bufio.NewScanner(file)
+}
+
+func (f *FileScanner) ReadFile(file string) []SourceCode {
+	f.newReader(file)
+	var source []SourceCode
+	var lineNumber int = 1
+	
+	for f.Scanner.Scan() {
+		source = append(source, SourceCode{Line: f.Scanner.Text(), LineNumber: lineNumber})
+		lineNumber++
+	}
+
+	return source
+}
+
+type FileWriter struct {
+	Writer *bufio.Writer
+}
+
+func (f *FileWriter) newWriter(filename string) {
+	file, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	f.Writer = bufio.NewWriter(file)
+}
+
+func (f *FileWriter) writeLine(line string) {
+	_, err := f.Writer.WriteString(line + "\n")
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (f *FileWriter) WriteFile(source []string) {
+	f.newWriter("output.txt")
+	f.writeLine("flowchart LR")
 	for _, line := range source {
-        bytesWritten, err := writer.WriteString(line + "\n")
-        if err != nil {
-            panic(err)
-        }
-        fmt.Printf("Bytes Written: %d\n", bytesWritten)
-        fmt.Printf("Available: %d\n", writer.Available())
-        fmt.Printf("Buffered : %d\n", writer.Buffered())
-    }
-    writer.Flush()
+		f.writeLine(line)
+	}
+	f.Writer.Flush()
 }
 
 func main() {
-	ast := parser(readFile("source.txt"))
+	var writer FileWriter = FileWriter{}
+	var scanner FileScanner = FileScanner{} 
+	
+	ast := parser(scanner.ReadFile("source.txt"))
 	output := transpiler(ast)
-	writeFile(output)
+	writer.WriteFile(output)
 	fmt.Println(output)
 }
