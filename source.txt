@@ -1,0 +1,4 @@
+Entity(A "User")
+Database(B "test")
+Rel(A "123" B)
+Rel(B "456" B)
