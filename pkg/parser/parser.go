@@ -9,10 +9,9 @@ import (
 type CallExpr struct {
 	Type       string
 	Value      string
+	LineNumber int
 	Parameters []tk.Token
 }
-
-
 
 func (c CallExpr) validateCallExprIdentifier(value string) bool {
 	var result = map[string]string{
@@ -39,8 +38,8 @@ func validateEntityParameters(expression CallExpr) {
 	if expression.Value == "Rel" {
 		return
 	}
-	if len(expression.Parameters) != 2 {
-		panic(fmt.Sprintf("Line %v: Entity call expression must have 2 parameters.", expression.Parameters[0].LineNumber))
+	if len(expression.Parameters) == 0 || len(expression.Parameters) != 2 {
+		panic(fmt.Sprintf("Line %v: Entity call expression must have 2 parameters.", expression.LineNumber))
 	}
 	if expression.Parameters[0].Type != tk.Identifier {
 		panic(fmt.Sprintf("Line %v: Entity call expression first parameter must be an identifier.", expression.Parameters[0].LineNumber))
@@ -54,8 +53,8 @@ func validateRelParameters(expression CallExpr) {
 	if expression.Value != "Rel" {
 		return
 	}
-	if len(expression.Parameters) != 3 {
-		panic(fmt.Sprintf("Line %v: Rel call expression must have 3 parameters.", expression.Parameters[0].LineNumber))
+	if len(expression.Parameters) == 0 || len(expression.Parameters) != 3 {
+		panic(fmt.Sprintf("Line %v: Rel call expression must have 3 parameters.", expression.LineNumber))
 	}
 	if expression.Parameters[0].Type != tk.Identifier {
 		panic(fmt.Sprintf("Line %v: Rel call expression first parameter must be an identifier.", expression.Parameters[1].LineNumber))
@@ -68,13 +67,13 @@ func validateRelParameters(expression CallExpr) {
 	}
 }
 
-func parseCallExpr(tokens []tk.Token) []CallExpr {
+func parseTokensToCallExprs(tokens []tk.Token) []CallExpr {
 	var expressions []CallExpr
 
 	for len(tokens) > 0 {
 		current := eatToken(&tokens)
 		if current.Type == tk.Identifier {
-			expression := CallExpr{Value: current.Value, Type: "CallExpr"}
+			expression := CallExpr{Value: current.Value, Type: "CallExpr", LineNumber: current.LineNumber}
 
 			if !expression.validateCallExprIdentifier(current.Value) {
 				panic(fmt.Sprintf("Line %v: Unexpected %v call expression", current.LineNumber, current.Value))
@@ -86,16 +85,12 @@ func parseCallExpr(tokens []tk.Token) []CallExpr {
 
 			eatToken(&tokens)
 
-			if currentToken(tokens).Type != tk.NumberLiteral && 
-				currentToken(tokens).Type != tk.StringLiteral && 
-				currentToken(tokens).Type != tk.Identifier {
-				panic(fmt.Sprintf("Line %v: Unexpected %v token after \"(\" character.", currentToken(tokens).LineNumber, currentToken(tokens).Type.String()))
-			}
-
 			for len(tokens) > 0 && currentToken(tokens).Type != tk.CloseParen {
 				c := eatToken(&tokens)
 				if c.Type == tk.NumberLiteral || c.Type == tk.StringLiteral || c.Type == tk.Identifier {
 					expression.Parameters = append(expression.Parameters, c)
+				} else {
+					panic(fmt.Sprintf("Line %v: Unexpected %v token after \"(\" character.", currentToken(tokens).LineNumber, currentToken(tokens).Type.String()))
 				}
 			}
 
@@ -103,10 +98,10 @@ func parseCallExpr(tokens []tk.Token) []CallExpr {
 				panic(fmt.Sprintf("Line %v: Expected \")\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
 			}
 
+			eatToken(&tokens)
+
 			validateEntityParameters(expression)
 			validateRelParameters(expression)
-
-			eatToken(&tokens)
 
 			expressions = append(expressions, expression)
 		}
@@ -123,5 +118,5 @@ func Parse(source []ty.SourceCode) []CallExpr {
 		source = source[1:]
 	}
 
-	return parseCallExpr(tokens)
+	return parseTokensToCallExprs(tokens)
 }
