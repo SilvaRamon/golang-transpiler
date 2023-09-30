@@ -72,39 +72,42 @@ func parseTokensToCallExprs(tokens []tk.Token) []CallExpr {
 
 	for len(tokens) > 0 {
 		current := eatToken(&tokens)
-		if current.Type == tk.Identifier {
-			expression := CallExpr{Value: current.Value, Type: "CallExpr", LineNumber: current.LineNumber}
 
-			if !expression.validateCallExprIdentifier(current.Value) {
-				panic(fmt.Sprintf("Line %v: Unexpected %v call expression", current.LineNumber, current.Value))
-			}
-
-			if currentToken(tokens).Type != tk.OpenParen {
-				panic(fmt.Sprintf("Line %v: Expected \"(\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
-			}
-
-			eatToken(&tokens)
-
-			for len(tokens) > 0 && currentToken(tokens).Type != tk.CloseParen {
-				c := eatToken(&tokens)
-				if c.Type == tk.NumberLiteral || c.Type == tk.StringLiteral || c.Type == tk.Identifier {
-					expression.Parameters = append(expression.Parameters, c)
-				} else {
-					panic(fmt.Sprintf("Line %v: Unexpected %v token after \"(\" character.", currentToken(tokens).LineNumber, currentToken(tokens).Type.String()))
-				}
-			}
-
-			if currentToken(tokens).Type != tk.CloseParen {
-				panic(fmt.Sprintf("Line %v: Expected \")\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
-			}
-
-			eatToken(&tokens)
-
-			validateEntityParameters(expression)
-			validateRelParameters(expression)
-
-			expressions = append(expressions, expression)
+		if current.Type != tk.Identifier {
+			continue
 		}
+		
+		expression := CallExpr{Value: current.Value, Type: "CallExpr", LineNumber: current.LineNumber}
+
+		if !expression.validateCallExprIdentifier(current.Value) {
+			panic(fmt.Sprintf("Line %v: Unexpected %v call expression", current.LineNumber, current.Value))
+		}
+
+		if currentToken(tokens).Type != tk.OpenParen {
+			panic(fmt.Sprintf("Line %v: Expected \"(\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
+		}
+
+		eatToken(&tokens)
+
+		for len(tokens) > 0 && currentToken(tokens).Type != tk.CloseParen {
+			c := eatToken(&tokens)
+			if c.Type == tk.NumberLiteral || c.Type == tk.StringLiteral || c.Type == tk.Identifier {
+				expression.Parameters = append(expression.Parameters, c)
+				continue
+			}
+			panic(fmt.Sprintf("Line %v: Unexpected %v token after \"(\" character.", currentToken(tokens).LineNumber, currentToken(tokens).Type.String()))
+		}
+
+		if currentToken(tokens).Type != tk.CloseParen {
+			panic(fmt.Sprintf("Line %v: Expected \")\" character after %v identifier.", currentToken(tokens).LineNumber, current.Value))
+		}
+
+		eatToken(&tokens)
+
+		validateEntityParameters(expression)
+		validateRelParameters(expression)
+
+		expressions = append(expressions, expression)
 	}
 	return expressions
 }
